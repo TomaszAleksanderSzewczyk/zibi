@@ -1,0 +1,35 @@
+{
+  "name": "zibi",
+  "version": "1.0.0",
+  "description": "Terminal Manager CLI - Open multiple Claude Code instances in a grid layout",
+  "main": "dist/index.js",
+  "bin": {
+    "zibi": "./bin/zibi"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs --dts --clean",
+    "dev": "tsup src/index.ts --format cjs --watch",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "cli",
+    "terminal",
+    "claude",
+    "grid",
+    "window-manager"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.0.0",
+    "execa": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
