@@ -76,14 +76,17 @@ return (screenWidth as string) & "," & (screenHeight as string) & "," & (workAre
       const { stdout } = await execa('osascript', ['-e',
         'tell application "System Events" to return (exists (application process "iTerm2")) as string'
       ]);
-      return stdout.trim() === 'true';
+      if (stdout.trim() === 'true') return true;
     } catch {
-      try {
-        await execa('test', ['-d', '/Applications/iTerm.app']);
-        return true;
-      } catch {
-        return false;
-      }
+      // ignore
+    }
+
+    // Check if iTerm.app is installed even if not running
+    try {
+      await execa('test', ['-d', '/Applications/iTerm.app']);
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -119,62 +122,50 @@ return (screenWidth as string) & "," & (screenHeight as string) & "," & (workAre
 
     console.log(`  Opening iTerm2 with ${cols}x${rows} split panes...`);
 
-    // Step 1: Create window with first session
-    const createScript = [
-      'tell application "iTerm2"',
+    // Build a single AppleScript that creates the window and all split panes
+    const lines: string[] = [
+      'tell application "iTerm"',
       '  activate',
+      '  delay 1',
       `  create window with default profile command "/bin/bash -c '${shellCmd}'"`,
-      '  tell current window',
-      `    set bounds to {${screenInfo.workAreaX}, ${screenInfo.workAreaY}, ${screenInfo.workAreaX + screenInfo.workAreaWidth}, ${screenInfo.workAreaY + screenInfo.workAreaHeight}}`,
-      '  end tell',
-      'end tell',
-    ].join('\n');
+      '  delay 2',
+      '  set w to first window',
+      `  set bounds of w to {${screenInfo.workAreaX}, ${screenInfo.workAreaY}, ${screenInfo.workAreaX + screenInfo.workAreaWidth}, ${screenInfo.workAreaY + screenInfo.workAreaHeight}}`,
+    ];
 
-    try {
-      await execa('osascript', ['-e', createScript]);
-    } catch (error: any) {
-      console.error(`  iTerm2 failed, falling back to Terminal.app...`);
-      await this.openTerminalAppWindows(count, workingDir, command, screenInfo);
-      return;
-    }
-
-    await this.sleep(500);
     let created = 1;
 
-    // Step 2: Create columns by splitting vertically
-    for (let col = 1; col < cols && created < count; col++) {
-      const splitV = [
-        'tell application "iTerm2"',
-        '  tell current window',
-        '    tell current session of current tab',
-        `      split vertically with default profile command "/bin/bash -c '${shellCmd}'"`,
-        '    end tell',
-        '  end tell',
-        'end tell',
-      ].join('\n');
-
-      await execa('osascript', ['-e', splitV]);
+    // Step 1: Create rows by splitting horizontally
+    for (let row = 1; row < rows && created < count; row++) {
+      lines.push('  tell current session of current tab of w');
+      lines.push(`    split horizontally with default profile command "/bin/bash -c '${shellCmd}'"`);
+      lines.push('  end tell');
+      lines.push('  delay 0.5');
       created++;
-      await this.sleep(300);
     }
 
-    // Step 3: Split each column horizontally to create rows
-    for (let col = 0; col < cols && created < count; col++) {
-      for (let row = 1; row < rows && created < count; row++) {
-        const splitH = [
-          'tell application "iTerm2"',
-          '  tell current window',
-          `    tell session ${col + 1} of current tab`,
-          `      split horizontally with default profile command "/bin/bash -c '${shellCmd}'"`,
-          '    end tell',
-          '  end tell',
-          'end tell',
-        ].join('\n');
-
-        await execa('osascript', ['-e', splitH]);
+    // Step 2: Split each row vertically to create columns
+    // After horizontal splits, sessions 1..rows are the rows (top to bottom)
+    for (let row = 0; row < rows && created < count; row++) {
+      for (let col = 1; col < cols && created < count; col++) {
+        lines.push(`  tell session ${row + 1} of current tab of w`);
+        lines.push(`    split vertically with default profile command "/bin/bash -c '${shellCmd}'"`);
+        lines.push('  end tell');
+        lines.push('  delay 0.5');
         created++;
-        await this.sleep(300);
       }
+    }
+
+    lines.push('end tell');
+
+    const script = lines.join('\n');
+
+    try {
+      await execa('osascript', ['-e', script]);
+    } catch (error: any) {
+      console.error(`  iTerm2 failed: ${error.stderr || error.message}`);
+      console.error(`  Falling back to tmux in Terminal.app...`);
+      await this.openTerminalAppWindows(count, workingDir, command, screenInfo);
     }
   }
 
@@ -184,34 +175,61 @@ return (screenWidth as string) & "," & (screenHeight as string) & "," & (workAre
     command: string,
     screenInfo: ScreenInfo
   ): Promise<void> {
-    const { rows, cols } = this.calculateGrid(count);
-    const shellCmd = this.buildShellCmd(workingDir, command);
-
-    // Terminal.app doesn't support split panes, open separate windows in grid
-    for (let i = 0; i < count; i++) {
-      const row = Math.floor(i / cols);
-      const col = i % cols;
-
-      const gap = 10;
-      const totalGapX = gap * (cols + 1);
-      const totalGapY = gap * (rows + 1);
-      const winW = Math.floor((screenInfo.workAreaWidth - totalGapX) / cols);
-      const winH = Math.floor((screenInfo.workAreaHeight - totalGapY) / rows);
-      const x = screenInfo.workAreaX + gap + col * (winW + gap);
-      const y = screenInfo.workAreaY + gap + row * (winH + gap);
-
-      const script = [
-        'tell application "Terminal"',
-        '  activate',
-        `  do script "/bin/bash -c '${shellCmd}'"`,
-        '  delay 0.3',
-        `  set bounds of front window to {${x}, ${y}, ${x + winW}, ${y + winH}}`,
-        'end tell',
-      ].join('\n');
-
-      await execa('osascript', ['-e', script]);
-      await this.sleep(300);
+    // Check if tmux is available
+    try {
+      await execa('which', ['tmux']);
+    } catch {
+      console.error('  tmux is not installed. Install it with: brew install tmux');
+      process.exit(1);
     }
+
+    const { rows, cols } = this.calculateGrid(count);
+    const sessionName = `zibi-${Date.now()}`;
+    const escapedDir = workingDir.replace(/'/g, "'\\''");
+    const escapedCmd = command.replace(/'/g, "'\\''");
+    const paneCmd = `cd '${escapedDir}' && unset CLAUDECODE && ${escapedCmd}`;
+
+    console.log(`  Opening Terminal.app with tmux ${cols}x${rows} panes...`);
+
+    // Create tmux session with first pane
+    await execa('tmux', ['new-session', '-d', '-s', sessionName, '-x', '250', '-y', '50', paneCmd]);
+
+    let created = 1;
+
+    // Create columns by splitting horizontally (left-right in tmux)
+    for (let col = 1; col < cols && created < count; col++) {
+      await execa('tmux', ['split-window', '-h', '-t', sessionName, paneCmd]);
+      created++;
+    }
+
+    // Even out the columns
+    await execa('tmux', ['select-layout', '-t', sessionName, 'even-horizontal']);
+
+    // Split each column vertically (top-bottom in tmux) to create rows
+    for (let col = 0; col < cols && created < count; col++) {
+      // Select the pane for this column
+      await execa('tmux', ['select-pane', '-t', `${sessionName}:.${col}`]);
+      for (let row = 1; row < rows && created < count; row++) {
+        await execa('tmux', ['split-window', '-v', '-t', sessionName, paneCmd]);
+        created++;
+      }
+    }
+
+    // Apply tiled layout for even distribution
+    await execa('tmux', ['select-layout', '-t', sessionName, 'tiled']);
+
+    // Open Terminal.app and attach to the tmux session
+    const shellCmd = `tmux attach-session -t ${sessionName}`;
+    const script = [
+      'tell application "Terminal"',
+      '  activate',
+      `  do script "${shellCmd}"`,
+      '  delay 0.5',
+      `  set bounds of front window to {${screenInfo.workAreaX}, ${screenInfo.workAreaY}, ${screenInfo.workAreaX + screenInfo.workAreaWidth}, ${screenInfo.workAreaY + screenInfo.workAreaHeight}}`,
+      'end tell',
+    ].join('\n');
+
+    await execa('osascript', ['-e', script]);
   }
 
   private sleep(ms: number): Promise<void> {
