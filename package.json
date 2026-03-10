@@ -1,25 +1,38 @@
 {
-  "name": "zibi",
-  "version": "1.0.0",
+  "name": "@tommily/zibi",
+  "version": "1.0.2",
   "description": "Terminal Manager CLI - Open multiple Claude Code instances in a grid layout",
   "main": "dist/index.js",
   "bin": {
     "zibi": "./bin/zibi"
   },
+  "files": [
+    "dist",
+    "bin"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs --dts --clean",
     "dev": "tsup src/index.ts --format cjs --watch",
+    "prepublishOnly": "npm run build",
     "start": "node dist/index.js"
   },
   "keywords": [
     "cli",
     "terminal",
     "claude",
+    "claude-code",
+    "split-pane",
     "grid",
-    "window-manager"
+    "window-manager",
+    "windows-terminal"
   ],
-  "author": "",
+  "author": "Tomasz Aleksander Szewczyk",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TomaszAleksanderSzewczyk/zibi.git"
+  },
+  "homepage": "https://github.com/TomaszAleksanderSzewczyk/zibi#readme",
   "dependencies": {
     "commander": "^12.0.0",
     "execa": "^8.0.0"
