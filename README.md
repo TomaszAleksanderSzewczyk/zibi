@@ -1,6 +1,6 @@
 # zibi
 
-Terminal Manager CLI - open multiple Claude Code instances in a single Windows Terminal window with split panes.
+Terminal Manager CLI - open multiple Claude Code instances in a single Windows Terminal/ iTerm2 / Apple Terminal(separated windows) window with split panes.
 
 ## Installation
 
