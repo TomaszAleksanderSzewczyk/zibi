@@ -5,11 +5,10 @@ Terminal Manager CLI - open multiple Claude Code instances in a single Windows T
 ## Installation
 
 ```bash
-git clone https://github.com/TomaszAleksanderSzewczyk/zibi.git
-cd zibi
-npm install
-npm run build
-npm link
+npm install -g @tommily/zibi
+iTerm2 Terminal/ Tmux needs to be installed 
+zibi -c <X instances of cc>
+voila. 
 ```
 
 ## Usage
